@@ -1,0 +1,22 @@
+extern cos
+
+fun a() { ret y; }
+
+# fib function
+fun foo(x, y) {
+    fun bar(value) {
+        ret value + 40;
+    }
+
+    fun void() { }
+
+    res = x * cos(y) + bar() - 1;
+
+    void();
+
+    ret res;
+}
+
+# This expression will compute the 40th number.
+foo(10, 3);
+

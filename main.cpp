@@ -5,7 +5,7 @@
 template <class... Args>
 void write(Args&&... args)
 {
-    ((std::cout << args << ' '), ...) << std::endl;
+    ((std::cerr << args << ' '), ...) << std::endl;
 }
 
 int main()
@@ -13,17 +13,17 @@ int main()
     // Token::Tokenizer tokenizer;
     // while (true) {
     //     auto [token, data] = tokenizer.getToken();
-    //     std::cout << Token::tokenToString(token);
+    //     std::cerr << Token::tokenToString(token);
     //     if (data) {
     //         if (token == Token::INT) {
-    //             std::cout << *(int*)data;
+    //             std::cerr << *(int*)data;
     //         }
     //         else {
-    //             std::cout << *(std::string*)data;
+    //             std::cerr << *(std::string*)data;
     //         }
     //     }
-    //     std::cout << std::endl;
-    //     std::cout << " --------- " << std::endl;
+    //     std::cerr << std::endl;
+    //     std::cerr << " --------- " << std::endl;
     //     if (token == Token::END) {
     //         break;
     //     }

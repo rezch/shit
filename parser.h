@@ -1,6 +1,9 @@
 #pragma once
 
+#include <iostream>
+
 #include "tokenizer.h"
+#include "jit.h"
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/IR/Constants.h"
@@ -8,58 +11,186 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Passes/StandardInstrumentations.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/StandardInstrumentations.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/Reassociate.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
 
 #include <cstdint>
 #include <map>
 #include <ranges>
 #include <string>
 
+#define DEBUG 0
+
+#if DEBUG
+template <class... Args>
+void debug(int layer, Args&&... args)
+{
+    std::cerr << std::string(layer * 4, ' ');
+    ((std::cerr << args << ' '), ...) << std::endl;
+}
+#else
+template <class... Args>
+void debug(int layer, Args&&... args)
+{}
+#endif
+
+namespace Token {
+
+int getTokenPrecedence(const std::string& token) // NOLINT
+{
+    if (binopPrecedence.contains(token)) {
+        return binopPrecedence.at(token);
+    }
+    return -1;
+}
+
+} // namespace Token
 
 namespace AST {
 
-class ASTMeta {
+class PrototypeAST;
+
+class IRManager;
+
+namespace {
+static IRManager *_this = nullptr;
+
+// jit
+std::unique_ptr<llvm::orc::ShitJIT> __jit;
+
+// Values
+std::map<std::string, llvm::Value*> __values;
+std::map<std::string, std::unique_ptr<PrototypeAST>> __functionProtos;
+
+// Error
+llvm::ExitOnError __exitOnErr;
+} // namespace
+
+class IRManager {
 public:
     using Context     = llvm::LLVMContext;
     using Builder     = llvm::IRBuilder<>;
     using Module      = llvm::Module;
-    using NamedValues = std::map<std::string, llvm::Value *>;
 
-    static ASTMeta *get()
+    static IRManager *get()
     {
-        static ASTMeta *_this = nullptr;
         if (_this == nullptr) {
-            _this = new ASTMeta();
+            reinit();
         }
         return _this;
     }
 
+    static void reinit()
+    {
+        _this = new IRManager();
+    }
+
     static Context *getCtx()
     {
-        return ASTMeta::get()->context_.get();
+        return IRManager::get()->context_.get();
     }
 
     static Builder *getBuilder()
     {
-        return ASTMeta::get()->builder_.get();
+        return IRManager::get()->builder_.get();
     }
 
     static Module *getModule()
     {
-        return ASTMeta::get()->module_.get();
+        return IRManager::get()->module_.get();
     }
 
-    static NamedValues *getValues()
+    static llvm::orc::ShitJIT *getJIT()
     {
-        return ASTMeta::get()->values_.get();
+        if (__jit == nullptr) {
+            auto jit = llvm::orc::ShitJIT::Create();
+            if (auto err = jit.takeError()) {
+                llvm::errs() << "Cannot create a JIT " << toString(std::move(err)) << "\n";
+                return nullptr;
+            }
+            __jit = std::unique_ptr<llvm::orc::ShitJIT>(jit->release());
+        }
+        return __jit.get();
     }
 
-private:
-    ASTMeta() = default;
+    static std::map<std::string, llvm::Value*> &getValues()
+    {
+        return __values;
+    }
 
+    static std::map<std::string, std::unique_ptr<PrototypeAST>> &getFunctionProtos()
+    {
+        return __functionProtos;
+    }
+
+    static llvm::Function *getFunction(std::string name);
+
+    template <class T>
+    static auto onErr(T arg)
+    {
+        return __exitOnErr(std::move(arg));
+    }
+
+// private:
+    IRManager()
+        : context_(std::make_unique<Context>()),
+          builder_(std::make_unique<Builder>(*context_)),
+          module_(std::make_unique<Module>("someShitJIT", *context_)),
+          fpm_(std::make_unique<llvm::FunctionPassManager>()),
+          lam_(std::make_unique<llvm::LoopAnalysisManager>()),
+          fam_(std::make_unique<llvm::FunctionAnalysisManager>()),
+          cgam_(std::make_unique<llvm::CGSCCAnalysisManager>()),
+          mam_(std::make_unique<llvm::ModuleAnalysisManager>()),
+          pic_(std::make_unique<llvm::PassInstrumentationCallbacks>()),
+          si_(std::make_unique<llvm::StandardInstrumentations>(
+              *context_,
+              /*DebugLogging*/ true))
+    {
+       module_->setDataLayout(IRManager::getJIT()->getDataLayout());
+
+       si_->registerCallbacks(*pic_, mam_.get());
+       fpm_->addPass(llvm::InstCombinePass());
+       fpm_->addPass(llvm::ReassociatePass());
+       fpm_->addPass(llvm::GVNPass());
+       fpm_->addPass(llvm::SimplifyCFGPass());
+
+       llvm::PassBuilder PB;
+       PB.registerModuleAnalyses(*mam_);
+       PB.registerFunctionAnalyses(*fam_);
+       PB.crossRegisterProxies(*lam_, *fam_, *cgam_, *mam_);
+    }
+
+    static std::unique_ptr<llvm::orc::ShitJIT> createJIT()
+    {
+        auto jit = llvm::orc::ShitJIT::Create();
+        if (auto err = jit.takeError()) {
+            llvm::errs() << "Cannot create a JIT " << toString(std::move(err)) << "\n";
+            return nullptr;
+        }
+        return std::unique_ptr<llvm::orc::ShitJIT>(jit->release());
+    }
+
+    // Building
     std::unique_ptr<Context> context_;
     std::unique_ptr<Builder> builder_;
     std::unique_ptr<Module> module_;
-    std::unique_ptr<NamedValues> values_;
+
+    // JIT
+    std::unique_ptr<llvm::FunctionPassManager> fpm_;
+    std::unique_ptr<llvm::LoopAnalysisManager> lam_;
+    std::unique_ptr<llvm::FunctionAnalysisManager> fam_;
+    std::unique_ptr<llvm::CGSCCAnalysisManager> cgam_;
+    std::unique_ptr<llvm::ModuleAnalysisManager> mam_;
+    std::unique_ptr<llvm::PassInstrumentationCallbacks> pic_;
+    std::unique_ptr<llvm::StandardInstrumentations> si_;
 };
 
 
@@ -69,13 +200,12 @@ class ExpressionAST {
 public:
 
     virtual llvm::Value *codeGen() const = 0;
+    virtual void debugPrint(int layer = 0) const = 0;
 
     virtual ~ExpressionAST() = default;
 };
 
 // Loggers
-
-class PrototypeAST;
 
 std::unique_ptr<ExpressionAST> LogError(const char *Str) // NOLINT
 {
@@ -106,8 +236,16 @@ public:
     llvm::Value *codeGen() const override
     {
         return llvm::ConstantInt::get(
-                *ASTMeta::getCtx(),
+                *IRManager::getCtx(),
                 llvm::APInt(64, value_));
+    }
+
+    void debugPrint(int layer = 0) const override
+    {
+#if DEBUG
+        ++layer;
+        debug(layer, "Value: ", value_);
+#endif
     }
 
 private:
@@ -156,12 +294,21 @@ public:
 
     llvm::Value *codeGen() const override
     {
-        llvm::Value *value = (*ASTMeta::getValues())[name_];
-        if (!value) {
-            std::string msg = "Unknown variable name " + name_;
-            LogErrorV(msg.c_str());
-        }
-        return value;
+        llvm::Value *value = IRManager::getValues()[name_];
+        return value
+            ? value
+            : IRManager::getBuilder()->CreateAlloca(
+                llvm::Type::getInt64Ty(*IRManager::getCtx()),
+                nullptr,
+                name_);
+    }
+
+    void debugPrint(int layer = 0) const override
+    {
+#if DEBUG
+        ++layer;
+        debug(layer, "Var: ", name_);
+#endif
     }
 
 private:
@@ -190,16 +337,17 @@ public:
         }
 
         if (op_ == "+") {
-            return ASTMeta::getBuilder()->CreateFAdd(lhs, rhs, "addtmp");
+            return IRManager::getBuilder()->CreateAdd(lhs, rhs, "addtmp");
         }
         if (op_ == "-") {
-            return ASTMeta::getBuilder()->CreateFSub(lhs, rhs, "rhssubtmp");
+            return IRManager::getBuilder()->CreateSub(lhs, rhs, "rhssubtmp");
         }
         if (op_ == "*") {
-            return ASTMeta::getBuilder()->CreateFMul(lhs, rhs, "rhsmultmp");
+            return IRManager::getBuilder()->CreateMul(lhs, rhs, "rhsmultmp");
         }
         if (op_ == "/") {
-            return ASTMeta::getBuilder()->CreateFDiv(lhs, rhs, "rhsdivtmp");
+            return nullptr;
+            // return ASTMeta::getBuilder()->CreateFP(lhs, rhs, "rhsdivtmp");
         }
         if (op_ == "<") {
             return less(lhs, rhs);
@@ -207,19 +355,39 @@ public:
         if (op_ == ">") {
             return less(rhs, lhs);
         }
+        if (op_ == "=") {
+            return IRManager::getBuilder()->CreateStore(rhs, lhs);
+        }
         std::string msg = "invalid binary operator ";
         msg += op_;
         msg += ("for " + lhs->getName() + " | " + rhs->getName()).str();
         return LogErrorV(msg.c_str());
     }
 
+    void debugPrint(int layer = 0) const override
+    {
+#if DEBUG
+        ++layer;
+        debug(layer, "BinaryOp:");
+        lhs_->debugPrint(layer);
+        debug(layer, "OP: ", op_);
+        rhs_->debugPrint(layer);
+        debug(layer, "End of BinaryOp");
+#endif
+    }
+
+    std::string getOp() const
+    {
+        return op_;
+    }
+
 private:
     llvm::Value *less(llvm::Value *lhs, llvm::Value *rhs) const
     {
-        lhs = ASTMeta::getBuilder()->CreateFCmpULT(lhs, rhs, "cmptmp");
-        return ASTMeta::getBuilder()->CreateUIToFP(
+        lhs = IRManager::getBuilder()->CreateFCmpULT(lhs, rhs, "cmptmp");
+        return IRManager::getBuilder()->CreateUIToFP(
                 lhs,
-                llvm::Type::getDoubleTy(*ASTMeta::getCtx()),
+                llvm::Type::getInt64Ty(*IRManager::getCtx()),
                 "booltmp");
     }
 
@@ -240,7 +408,7 @@ public:
 
     llvm::Value *codeGen() const override
     {
-        llvm::Function *calleeF = ASTMeta::getModule()->getFunction(callee_);
+        llvm::Function *calleeF = IRManager::getFunction(callee_);
         if (!calleeF) {
             std::string msg = "Unknown function reference " + callee_;
             return LogErrorV(msg.c_str());
@@ -257,10 +425,23 @@ public:
                 return nullptr;
         }
 
-        return ASTMeta::getBuilder()->CreateCall(
+        return IRManager::getBuilder()->CreateCall(
                 calleeF,
                 argsValues,
                 "calltmp");
+    }
+
+    void debugPrint(int layer = 0) const override
+    {
+#if DEBUG
+        ++layer;
+        debug(layer, "Call: ", callee_);
+        for (size_t i = 0; i < args_.size(); ++i) {
+            debug(layer, "Arg: ", i);
+            args_[i]->debugPrint(layer);
+        }
+        debug(layer, "End of Call");
+#endif
     }
 
 private:
@@ -282,7 +463,7 @@ public:
         return name_;
     }
 
-    llvm::Value *codeGen() const
+    llvm::Function *codeGen() const
     {
         std::vector<llvm::Type *> argsTypes(args_.size(), getType());
 
@@ -291,7 +472,7 @@ public:
                         llvm::FunctionType::get(getType(), argsTypes, false),
                         llvm::Function::ExternalLinkage,
                         name_,
-                        ASTMeta::getModule());
+                        IRManager::getModule());
 
         for (auto arg : std::views::zip(func->args(), args_)) {
             std::get<0>(arg).setName(std::get<1>(arg));
@@ -300,10 +481,22 @@ public:
         return func;
     }
 
+    void debugPrint(int layer = 0) const
+    {
+#if DEBUG
+        ++layer;
+        debug(layer, "Proto: ", name_);
+        for (size_t i = 0; i < args_.size(); ++i) {
+            debug(layer, "Arg: ", i, " - ", args_[i]);
+        }
+        debug(layer, "End of Proto");
+#endif
+    }
+
 private:
     static llvm::IntegerType *getType()
     {
-        return llvm::Type::getInt64Ty(*ASTMeta::getCtx());
+        return llvm::Type::getInt64Ty(*IRManager::getCtx());
     }
 
     std::string name_;
@@ -319,33 +512,30 @@ public:
           body_(std::move(body))
     { }
 
-    llvm::Value *codeGen() const
+    llvm::Function *codeGen()
     {
-        llvm::Function *func = ASTMeta::getModule()->getFunction(proto_->getName());
-
+        auto &protoPtr = *proto_;
+        IRManager::getFunctionProtos()[proto_->getName()] = std::move(proto_);
+        llvm::Function *func = IRManager::getFunction(protoPtr.getName());
         if (!func) {
             return nullptr;
         }
 
-        if (!func->empty()) {
-            std::string msg = "Redefinition of function " + proto_->getName();
-            return (llvm::Function *)LogErrorV(msg.c_str());
-        }
-
-        ASTMeta::getBuilder()->SetInsertPoint(
+        IRManager::getBuilder()->SetInsertPoint(
                 llvm::BasicBlock::Create(
-                        *ASTMeta::getCtx(),
+                        *IRManager::getCtx(),
                         "entry",
                         func));
 
-        ASTMeta::getValues()->clear();
+        IRManager::getValues().clear();
         for (auto &arg : func->args()) {
-            (*ASTMeta::getValues())[std::string(arg.getName())] = &arg;
+            IRManager::getValues()[std::string(arg.getName())] = &arg;
         }
 
         if (llvm::Value *retVal = body_->codeGen()) {
-            ASTMeta::getBuilder()->CreateRet(retVal);
+            IRManager::getBuilder()->CreateRet(retVal);
             llvm::verifyFunction(*func);
+            IRManager::get()->fpm_->run(*func, *IRManager::get()->fam_);
             return func;
         }
 
@@ -353,44 +543,50 @@ public:
         return nullptr;
     }
 
+    void debugPrint(int layer = 0) const
+    {
+#if DEBUG
+        ++layer;
+        if (!proto_->getName().empty()) { // top layer
+            debug(layer, "Func: ", proto_->getName());
+            proto_->debugPrint(layer);
+        }
+        body_->debugPrint(layer);
+        if (!proto_->getName().empty()) {
+            debug(layer, "End of Func");
+        }
+#endif
+    }
+
 private:
     std::unique_ptr<PrototypeAST> proto_;
     std::unique_ptr<ExpressionAST> body_;
 };
 
-} // namespace AST
 
-namespace Token {
-
-int getTokenPrecedence(const std::string& token) // NOLINT
+llvm::Function *IRManager::getFunction(std::string name) // NOLINT
 {
-    static std::map<std::string, int> binopPrecedence = {
-        { "=",  0 },
-
-        { "<", 10 },
-        { ">", 10 },
-
-        { "+", 20 },
-        { "-", 20 },
-
-        { "*", 40 },
-        { "/", 40 },
-    };
-
-    if (binopPrecedence.contains(token)) {
-        return binopPrecedence.at(token);
+    if (auto *func = IRManager::get()->module_->getFunction(name)) {
+        return func;
     }
-    return -1;
+
+    auto funcIt = __functionProtos.find(name);
+    if (funcIt != __functionProtos.end()) {
+        return funcIt->second->codeGen();
+    }
+
+    return nullptr;
 }
 
-} // namespace Token
+
+} // namespace AST
 
 namespace Parser {
 
 class Parser {
 public:
     Parser()
-        : token_(Token::_NULL, nullptr)
+        : token_(Token::END, nullptr)
     { }
 
     // number
@@ -435,9 +631,9 @@ public:
         if (getTokenName() != "(") { // not a 'call'
             return std::make_unique<AST::VarAST>(name);
         }
+        getToken(); // eject '('
 
         // 'call'
-        getToken();
         std::vector<std::unique_ptr<AST::ExpressionAST>> args;
         if (getTokenName() != ")") {
             while (true) {
@@ -470,10 +666,10 @@ public:
     //        @parentheses)
     std::unique_ptr<AST::ExpressionAST> parsePrimary()
     {
+        if (getTokenName() == "(") {
+            return parseParentheses();
+        }
         if (token_.first == Token::IDENT) {
-            if (getTokenName() == "(") {
-                return parseParentheses();
-            }
             return parseIdentifier();
         }
         if (token_.first == Token::INT) {
@@ -482,6 +678,8 @@ public:
         return AST::LogError("Unknown token when expecting an expression");
     }
 
+    // expression
+    // seq(@expression, @bin_op, @expression)
     std::unique_ptr<AST::ExpressionAST> parseExpression()
     {
         auto lhs = parsePrimary();
@@ -491,37 +689,28 @@ public:
         return parseRhsBinOp(0, std::move(lhs));
     }
 
-    // expression
-    // seq(@expression, @bin_op, @expression)
     std::unique_ptr<AST::ExpressionAST> parseRhsBinOp(
-            int precedence,
+            int exprPrec,
             std::unique_ptr<AST::ExpressionAST> lhs)
     {
         // parse rhs while operators precedence lower than current op
-        // while (Token::getTokenPrecedence(getTokenName()) < precedence) {
         while (true) {
-            int TokPrec = Token::getTokenPrecedence(getTokenName());
+            int prec = Token::getTokenPrecedence(getTokenName());
 
-            // If this is a binop that binds at least as tightly as the current binop,
-            // consume it, otherwise we are done.
-            if (TokPrec < precedence)
+            if (prec < exprPrec)
                 return lhs;
 
             std::string op = getTokenName();
             getToken();
-
-            // if (op == ";") break;
 
             auto rhs = parsePrimary();
             if (!rhs) {
                 return nullptr;
             }
 
-            // if op binds less tightly with rhs than the operator after rhs
-            // let the pending operator take rhs as its lhs
             int nextPrecedence = Token::getTokenPrecedence(getTokenName());
-            if (precedence < nextPrecedence) {
-                rhs = parseRhsBinOp(precedence + 1, std::move(rhs));
+            if (exprPrec < nextPrecedence) {
+                rhs = parseRhsBinOp(exprPrec + 1, std::move(rhs));
                 if (!rhs) {
                     return nullptr;
                 }
@@ -542,25 +731,32 @@ public:
     //     ')')
     std::unique_ptr<AST::PrototypeAST> parsePrototype()
     {
-        if (token_.first != Token::IDENT) {
+        std::string name = getTokenName();
+        if (name.empty()) {
             return AST::LogErrorP("Expected function name in prototype");
         }
 
-        std::string name = getTokenName();
-        getToken();
-
+        getToken(); // eject name
         if (getTokenName() != "(") {
             return AST::LogErrorP("Expected '(' in prototype");
         }
+        getToken(); // eject '('
 
         std::vector<std::string> args;
-        while (getToken().first == Token::IDENT && getTokenName() != ")") {
+        while (getTokenName() != ")") {
             args.push_back(getTokenName());
 
-            if (getTokenName() != ",") {
-                return AST::LogErrorP("Expected ',' between args in args list prototype");
+            // eject ','
+            getToken();
+            auto token = getTokenName();
+            if (token == ")") {
+                break;
             }
-            getToken(); // eject ','
+            if (token != ",") {
+                std::string msg = "Expected ',' between args in args list prototype, found: " + token;
+                return AST::LogErrorP(msg.c_str());
+            }
+            getToken();
         }
 
         if (getTokenName() != ")") {
@@ -575,7 +771,7 @@ public:
     // seq(
     //      defenition: @prototype,
     //      body:       @expression)
-    std::unique_ptr<AST::FunctionAST> parseDefenition()
+    std::unique_ptr<AST::FunctionAST> parseDefinition()
     {
         getToken(); // eject 'fun'
 
@@ -605,18 +801,37 @@ public:
     std::unique_ptr<AST::FunctionAST> parseTopLevelExpr()
     {
         auto expr = parseExpression();
+        // if (isAssigment(expr)) {
+        //     debug(0, "ASSIGMENT");
+        //     return expr;
+        // }
         if (!expr) {
             return nullptr;
         }
-        auto proto = std::make_unique<AST::PrototypeAST>("", std::vector<std::string>());
+        auto proto = std::make_unique<AST::PrototypeAST>("__anon_expr", std::vector<std::string>());
         return std::make_unique<AST::FunctionAST>(std::move(proto), std::move(expr));
     }
 
     // Handlers
     void HandleDefinition()
     {
-        if (parseDefenition()) {
-            fprintf(stderr, "-- Parsed a function definition.\n");
+        auto funcAST = parseDefinition();
+        funcAST->debugPrint();
+        if (funcAST) {
+            auto *funcIR = funcAST->codeGen();
+            if (funcIR) {
+                fprintf(stderr, "Read function definition:\n");
+                funcIR->print(llvm::errs());
+                fprintf(stderr, "\n");
+
+                AST::IRManager::onErr(
+                    AST::IRManager::getJIT()->addModule(
+                        llvm::orc::ThreadSafeModule(
+                            std::move(AST::IRManager::get()->module_),
+                            std::move(AST::IRManager::get()->context_))));
+
+                AST::IRManager::reinit();
+            }
         }
         else {
             getToken();
@@ -625,8 +840,16 @@ public:
 
     void HandleExtern()
     {
-        if (parseExtern()) {
-            fprintf(stderr, "-- Parsed an extern\n");
+        auto protoAST = parseExtern();
+        protoAST->debugPrint();
+        if (protoAST) {
+            auto *funcIR = protoAST->codeGen();
+            if (funcIR) {
+                fprintf(stderr, "Read extern:\n");
+                funcIR->print(llvm::errs());
+                fprintf(stderr, "\n");
+                AST::IRManager::getFunctionProtos()[protoAST->getName()] = std::move(protoAST);
+            }
         }
         else {
             getToken();
@@ -635,8 +858,26 @@ public:
 
     void HandleTopLevelExpression()
     {
-        if (parseTopLevelExpr()) {
-            fprintf(stderr, "-- Parsed a top-level expr\n");
+        auto funcAST = parseTopLevelExpr();
+        funcAST->debugPrint();
+        if (funcAST) {
+            if (funcAST->codeGen()) {
+                auto retType = AST::IRManager::getJIT()->getMainJITDylib().createResourceTracker();
+
+                auto tsm = llvm::orc::ThreadSafeModule(
+                        std::move(AST::IRManager::get()->module_),
+                        std::move(AST::IRManager::get()->context_));
+
+                AST::IRManager::onErr(AST::IRManager::getJIT()->addModule(std::move(tsm), retType));
+                AST::IRManager::reinit();
+
+                auto exprSymbol = AST::IRManager::onErr(AST::IRManager::getJIT()->lookup("__anon_expr"));
+
+                int64_t (*intPtr)() = exprSymbol.toPtr<int64_t (*)()>();
+                fprintf(stderr, "Evaluated to %ld\n", intPtr());
+
+                AST::IRManager::onErr(retType->remove());
+            }
         }
         else {
             getToken();
@@ -651,11 +892,17 @@ public:
     //      ';')
     void MainLoop()
     {
-        fprintf(stderr, "ready> ");
+        llvm::InitializeNativeTarget();
+        llvm::InitializeNativeTargetAsmPrinter();
+        llvm::InitializeNativeTargetAsmParser();
+        AST::IRManager::reinit();
+
+        fprintf(stderr, "post> ");
         getToken();
 
         while (true) {
             if (token_.first == Token::END) {
+                fprintf(stderr, "\n==== done ====\n");
                 return;
             }
             else if (token_.first == Token::FUNC) {
@@ -670,12 +917,15 @@ public:
             else {
                 HandleTopLevelExpression();
             }
-            fprintf(stderr, "ready> ");
+            fprintf(stderr, "post> ");
         }
+
+        AST::IRManager::getModule()->print(llvm::errs(), nullptr);
     }
 private:
     Token::TokenData getToken()
     {
+        Token::freeToken(token_);
         token_ = tokenizer_.getToken();
         return token_;
     }
@@ -688,7 +938,17 @@ private:
 
     std::string getTokenName() const
     {
+        if (token_.first != Token::IDENT) {
+            return {};
+        }
         return getTokenData<std::string>();
+    }
+
+    bool isAssigment(const std::unique_ptr<AST::ExpressionAST>& expr)
+    {
+        auto binExpr = dynamic_cast<AST::BinaryExprAST*>(expr.get());
+        return binExpr != nullptr
+            && binExpr->getOp() == "=";
     }
 
     Token::Tokenizer tokenizer_;

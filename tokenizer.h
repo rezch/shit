@@ -1,15 +1,12 @@
 #pragma once
 
-#include <cstdint>
+#include <map>
 #include <string>
-#include <unordered_map>
 
 
 namespace Token {
 
 enum Token {
-    _NULL   = 0,
-
     END     = -1, // EOF
 
     // -- Commands
@@ -33,7 +30,22 @@ enum Token {
     // TSTR    = -14,
 };
 
+static const std::map<std::string, int> binopPrecedence = {
+    { "=",  0 },
+
+    { "<", 10 },
+    { ">", 10 },
+
+    { "+", 20 },
+    { "-", 20 },
+
+    { "*", 40 },
+    { "/", 40 },
+};
+
 typedef std::pair<Token, void*> TokenData;
+
+void freeToken(TokenData token);
 
 std::string tokenToString(Token token);
 

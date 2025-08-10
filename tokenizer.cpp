@@ -31,10 +31,19 @@ bool isInt(const std::string& str)
 
 } // namespace
 
+void freeToken(TokenData token)
+{
+    if (token.first == Token::IDENT) {
+        delete static_cast<std::string*>(token.second);
+    }
+    if (token.first == Token::INT) {
+        delete static_cast<int64_t*>(token.second);
+    }
+}
+
 std::string tokenToString(Token token)
 {
     switch (token) {
-        case _NULL  :   return "TOKEN : _NULL";
         case END    :   return "TOKEN : END";
         case FUNC   :   return "TOKEN : FUNC";
         case EXT    :   return "TOKEN : EXT";
@@ -57,14 +66,8 @@ Tokenizer::Tokenizer()
 
 TokenData Tokenizer::getToken()
 {
-    try {
-        auto [token, data] = getTokenImpl();
-        return { token, data };
-    }
-    catch (const std::exception &e) {
-        std::cerr << "internal error: " << e.what() << "\n";
-    }
-    return { _NULL, nullptr };
+    auto [token, data] = getTokenImpl();
+    return { token, data };
 }
 
 TokenData Tokenizer::getTokenImpl()
@@ -109,7 +112,7 @@ void Tokenizer::skipComment() const
 std::string Tokenizer::parseToken()
 {
     // skip spaces
-    while (std::isspace(lastSym)) {
+    while (std::isspace(lastSym) || lastSym == '\n') {
         lastSym = std::getchar();
     }
 

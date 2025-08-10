@@ -1,22 +1,12 @@
-extern cos
+extern cos(x);
 
-fun a() { ret y; }
+x = 10;
+y = 15;
 
-# fib function
-fun foo(x, y) {
-    fun bar(value) {
-        ret value + 40;
-    }
+fun foo(x, y)
+    x + 2 * (y + cos(4))
+;
 
-    fun void() { }
-
-    res = x * cos(y) + bar() - 1;
-
-    void();
-
-    ret res;
-}
-
-# This expression will compute the 40th number.
+# some comment
 foo(10, 3);
 

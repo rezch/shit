@@ -10,8 +10,13 @@ LLVM_FLAGS=$( echo $LLVM_FLAGS \
     | sed "s/-std=c++17/-std=c++23/g" \
 )
 
+LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH
+
 clang++ \
-    -g -O3 main.cpp tokenizer.cpp \
+    -Xlinker --export-dynamic \
+    -g -O3 ./main.cpp ./tokenizer.cpp \
     -fstandalone-debug -fsanitize=address \
    $LLVM_FLAGS \
     -o main
+
+./main

@@ -865,13 +865,14 @@ public:
                 auto retType = AST::IRManager::getJIT()->getMainJITDylib().createResourceTracker();
 
                 auto tsm = llvm::orc::ThreadSafeModule(
-                        std::move(AST::IRManager::get()->module_),
-                        std::move(AST::IRManager::get()->context_));
+                    std::move(AST::IRManager::get()->module_),
+                    std::move(AST::IRManager::get()->context_));
 
                 AST::IRManager::onErr(AST::IRManager::getJIT()->addModule(std::move(tsm), retType));
                 AST::IRManager::reinit();
 
-                auto exprSymbol = AST::IRManager::onErr(AST::IRManager::getJIT()->lookup("__anon_expr"));
+                auto exprSymbol = AST::IRManager::onErr(
+                     AST::IRManager::getJIT()->lookup("__anon_expr"));
 
                 int64_t (*intPtr)() = exprSymbol.toPtr<int64_t (*)()>();
                 fprintf(stderr, "Evaluated to %ld\n", intPtr());

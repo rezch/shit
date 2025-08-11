@@ -6,7 +6,7 @@
 
 namespace Token {
 
-enum Token {
+enum TokenType {
     END     = -1, // EOF
 
     // -- Commands
@@ -43,11 +43,13 @@ static const std::map<std::string, int> binopPrecedence = {
     { "/", 40 },
 };
 
-typedef std::pair<Token, void*> TokenData;
+int getTokenPrecedence(const std::string& token);
+
+typedef std::pair<TokenType, void*> TokenData;
 
 void freeToken(TokenData token);
 
-std::string tokenToString(Token token);
+std::string tokenToString(TokenType token);
 
 class Tokenizer {
 public:

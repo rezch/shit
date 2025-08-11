@@ -15,8 +15,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include <memory>
 
-namespace llvm {
-namespace orc {
+namespace llvm::orc {
 
 class ShitJIT {
 private:
@@ -87,5 +86,4 @@ public:
     }
 };
 
-} // namespace orc
-} // namespace llvm
+} // namespace llvm::orc

@@ -1,7 +1,6 @@
 #include "tokenizer.h"
 
 #include <algorithm>
-#include <iostream>
 
 
 namespace Token {
@@ -31,17 +30,25 @@ bool isInt(const std::string& str)
 
 } // namespace
 
+int getTokenPrecedence(const std::string& token)
+{
+    if (binopPrecedence.contains(token)) {
+        return binopPrecedence.at(token);
+    }
+    return -1;
+}
+
 void freeToken(TokenData token)
 {
-    if (token.first == Token::IDENT) {
+    if (token.first == TokenType::IDENT) {
         delete static_cast<std::string*>(token.second);
     }
-    if (token.first == Token::INT) {
+    if (token.first == TokenType::INT) {
         delete static_cast<int64_t*>(token.second);
     }
 }
 
-std::string tokenToString(Token token)
+std::string tokenToString(TokenType token)
 {
     switch (token) {
         case END    :   return "TOKEN : END";
@@ -75,28 +82,28 @@ TokenData Tokenizer::getTokenImpl()
     auto currentIdent = parseToken();
 
     if (currentIdent == "") {
-        return { Token::END, nullptr };
+        return { TokenType::END, nullptr };
     }
     if (currentIdent == "fun") {
-        return { Token::FUNC, nullptr };
+        return { TokenType::FUNC, nullptr };
     }
     if (currentIdent == "extern") {
-        return { Token::EXT, nullptr };
+        return { TokenType::EXT, nullptr };
     }
     if (currentIdent == "ret") {
-        return { Token::RET, nullptr };
+        return { TokenType::RET, nullptr };
     }
     // if (currentIdent == "bool") {
-    //     return { Token::TBOOL, nullptr };
+    //     return { TokenType::TBOOL, nullptr };
     // }
     // if (currentIdent == "int") {
-    //     return { Token::TINT, nullptr };
+    //     return { TokenType::TINT, nullptr };
     // }
     // if (currentIdent == "float") {
-    //     return { Token::TFLOAT, nullptr };
+    //     return { TokenType::TFLOAT, nullptr };
     // }
     // if (currentIdent == "str") {
-    //     return { Token::TSTR, nullptr };
+    //     return { TokenType::TSTR, nullptr };
     // }
     return parseValue(currentIdent);
 }
@@ -123,7 +130,8 @@ std::string Tokenizer::parseToken()
 
     if (lastSym == EOF) { return ""; }
 
-    if (std::isalnum(lastSym)) {
+    if (std::isalnum(lastSym)
+            || lastSym == '-') { // for negative numbers
         return readWord();
     }
 
@@ -145,18 +153,18 @@ std::string Tokenizer::readWord()
 TokenData Tokenizer::parseValue(const std::string& value)
 {
     if (isInt(value)) {
-        return { Token::INT, new int64_t(std::stoll(value)) };
+        return { TokenType::INT, new int64_t(std::stoll(value)) };
     }
     // if (isFloat(value)) {
-    //     return { Token::FLOAT, new double(std::stod(value)) };
+    //     return { TokenType::FLOAT, new double(std::stod(value)) };
     // }
     // if (value[0] == '"') {
-    //     return { Token::STR, new std::string(value.substr(1, value.size() - 2)) };
+    //     return { TokenType::STR, new std::string(value.substr(1, value.size() - 2)) };
     // }
     // if (value == "true" || value == "false") {
-    //     return { Token::BOOL, new bool(value == "true") };
+    //     return { TokenType::BOOL, new bool(value == "true") };
     // }
-    return { Token::IDENT, new std::string(value) };
+    return { TokenType::IDENT, new std::string(value) };
 }
 
 } // namespace Token

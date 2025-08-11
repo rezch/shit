@@ -10,12 +10,19 @@ LLVM_FLAGS=$( echo $LLVM_FLAGS \
     | sed "s/-std=c++17/-std=c++23/g" \
 )
 
-LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH
+SRCS=(
+    ./ast.cpp
+    ./context.cpp
+    ./parser.cpp
+    ./tokenizer.cpp
+    ./main.cpp
+)
 
+# -Xlinker --export-dynamic \
+# -fstandalone-debug -fsanitize=address \
 clang++ \
-    -Xlinker --export-dynamic \
-    -g -O3 ./main.cpp ./tokenizer.cpp \
-    -fstandalone-debug -fsanitize=address \
+    -g -O3 \
+    "${SRCS[@]}" \
    $LLVM_FLAGS \
     -o main
 

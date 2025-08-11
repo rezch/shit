@@ -63,7 +63,6 @@ llvm::orc::ShitJIT *IRManager::getJIT()
         }
         __jit = std::unique_ptr<llvm::orc::ShitJIT>(jit->release());
     }
-    // std::cerr << "RET JIT: " << __jit.get() << std::endl;
     return __jit.get();
 }
 

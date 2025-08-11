@@ -8,7 +8,6 @@
 #include <iostream>
 #include <string>
 
-
 #if DEBUG
 template <class... Args>
 void debug(int layer, Args &&...args)
@@ -21,6 +20,7 @@ template <class... Args>
 void debug(int layer, Args &&...args)
 { }
 #endif
+
 
 namespace AST {
 

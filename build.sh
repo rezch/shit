@@ -6,7 +6,8 @@ LLVM_FLAGS=`llvm-config \
         --system-libs \
         --libs core orcjit native`
 
-LLVM_FLAGS=$( echo $LLVM_FLAGS \
+LLVM_FLAGS=$(
+    echo $LLVM_FLAGS \
     | sed "s/-std=c++17/-std=c++23/g" \
 )
 
@@ -18,12 +19,12 @@ SRCS=(
     ./main.cpp
 )
 
-# -Xlinker --export-dynamic \
-# -fstandalone-debug -fsanitize=address \
 clang++ \
     -g -O3 \
     "${SRCS[@]}" \
-   $LLVM_FLAGS \
+    $LLVM_FLAGS \
+    -Xlinker --export-dynamic \
+    -fstandalone-debug -fsanitize=address \
     -o main
 
 ./main

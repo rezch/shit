@@ -1,25 +1,12 @@
 #pragma once
 
 #include "context.h"
+#include "debug.h"
 
 #include "llvm/IR/Value.h"
 
 #include <cstdint>
-#include <iostream>
 #include <string>
-
-#if DEBUG
-template <class... Args>
-void debug(int layer, Args &&...args)
-{
-    std::cerr << std::string(layer * 4, ' ');
-    ((std::cerr << args << ' '), ...) << std::endl;
-}
-#else
-template <class... Args>
-void debug(int layer, Args &&...args)
-{ }
-#endif
 
 
 namespace AST {
@@ -71,7 +58,7 @@ public:
 
     llvm::Value *codeGen() const override;
 
-    void debugPrint(int layer = 0) const override;
+    void debugPrint([[ maybe_unused ]] int layer = 0) const override;
 
     std::string getOp() const;
 
@@ -134,6 +121,24 @@ public:
 private:
     std::unique_ptr<PrototypeAST> proto_;
     std::unique_ptr<ExpressionAST> body_;
+};
+
+// Statements
+class IfElseExpressionAST : public ExpressionAST {
+public:
+    IfElseExpressionAST(
+        std::unique_ptr<ExpressionAST> condExpr,
+        std::unique_ptr<ExpressionAST> thenExpr,
+        std::unique_ptr<ExpressionAST> elseExpr);
+
+    llvm::Value *codeGen() const override;
+
+    void debugPrint(int layer = 0) const override;
+
+private:
+    std::unique_ptr<ExpressionAST> condExpr_;
+    std::unique_ptr<ExpressionAST> thenExpr_;
+    std::unique_ptr<ExpressionAST> elseExpr_;
 };
 
 // Loggers

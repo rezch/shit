@@ -1,5 +1,7 @@
 #pragma once
 
+#include "debug.h"
+
 #include <map>
 #include <string>
 
@@ -15,19 +17,13 @@ enum TokenType {
     RET     = -4,   // func return
 
     // -- Values
-    // const literals
-    // BOOL    = -5,
     INT     = -7,
-    // FLOAT   = -8,
-    // STR     = -9,
-    IDENT   = -10,   // identifier
+    IDENT   = -10,  // identifier
 
-    // -- Definitions
-    // Types
-    // TBOOL   = -11,
-    // TINT    = -12,
-    // TFLOAT  = -13,
-    // TSTR    = -14,
+    // -- Statements
+    // if/else
+    IF      = -11,
+    ELSE    = -12,
 };
 
 static const std::map<std::string, int> binopPrecedence = {

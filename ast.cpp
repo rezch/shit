@@ -54,13 +54,11 @@ llvm::Value *ValueAST::codeGen() const
             llvm::APInt(64, value_));
 }
 
-void ValueAST::debugPrint(int layer) const
-{
-#if DEBUG
+void ValueAST::debugPrint([[ maybe_unused ]] int layer) const
+IFDEBUG({
     ++layer;
     debug(layer, "Value: ", value_);
-#endif
-}
+})
 
 // Variable
 VarAST::VarAST(std::string name)
@@ -78,13 +76,11 @@ llvm::Value *VarAST::codeGen() const
             name_);
 }
 
-void VarAST::debugPrint(int layer) const
-{
-#if DEBUG
+void VarAST::debugPrint([[ maybe_unused ]] int layer) const
+IFDEBUG({
     ++layer;
     debug(layer, "Var: ", name_);
-#endif
-}
+})
 
 // Binary operator
 BinaryExprAST::BinaryExprAST(
@@ -134,17 +130,15 @@ llvm::Value *BinaryExprAST::codeGen() const
     return LogErrorV(msg.c_str());
 }
 
-void BinaryExprAST::debugPrint(int layer) const
-{
-#if DEBUG
+void BinaryExprAST::debugPrint([[ maybe_unused ]] int layer) const
+IFDEBUG({
     ++layer;
     debug(layer, "BinaryOp:");
     lhs_->debugPrint(layer);
     debug(layer, "OP: ", op_);
     rhs_->debugPrint(layer);
     debug(layer, "End of BinaryOp");
-#endif
-}
+})
 
 std::string BinaryExprAST::getOp() const
 {
@@ -153,11 +147,10 @@ std::string BinaryExprAST::getOp() const
 
 llvm::Value *BinaryExprAST::less(llvm::Value *lhs, llvm::Value *rhs) const
 {
-    lhs = Context::IRManager::getBuilder()->CreateFCmpULT(lhs, rhs, "cmptmp");
-    return Context::IRManager::getBuilder()->CreateUIToFP(
-            lhs,
+    return Context::IRManager::getBuilder()->CreateIntCast(
+            Context::IRManager::getBuilder()->CreateICmpULT(lhs, rhs, "booltmp"),
             llvm::Type::getInt64Ty(*Context::IRManager::getCtx()),
-            "booltmp");
+            false);
 }
 
 // Call
@@ -193,9 +186,8 @@ llvm::Value *CallExprAST::codeGen() const
             "calltmp");
 }
 
-void CallExprAST::debugPrint(int layer) const
-{
-#if DEBUG
+void CallExprAST::debugPrint([[ maybe_unused ]] int layer) const
+IFDEBUG({
     ++layer;
     debug(layer, "Call: ", callee_);
     for (size_t i = 0; i < args_.size(); ++i) {
@@ -203,8 +195,7 @@ void CallExprAST::debugPrint(int layer) const
         args_[i]->debugPrint(layer);
     }
     debug(layer, "End of Call");
-#endif
-}
+})
 
 // Prototype
 PrototypeAST::PrototypeAST(
@@ -237,17 +228,15 @@ llvm::Function *PrototypeAST::codeGen() const
     return func;
 }
 
-void PrototypeAST::debugPrint(int layer) const
-{
-#if DEBUG
+void PrototypeAST::debugPrint([[ maybe_unused ]] int layer) const
+IFDEBUG({
     ++layer;
     debug(layer, "Proto: ", name_);
     for (size_t i = 0; i < args_.size(); ++i) {
         debug(layer, "Arg: ", i, " - ", args_[i]);
     }
     debug(layer, "End of Proto");
-#endif
-}
+})
 
 // Function
 FunctionAST::FunctionAST(
@@ -288,9 +277,8 @@ llvm::Function *FunctionAST::codeGen()
     return nullptr;
 }
 
-void FunctionAST::debugPrint(int layer) const
-{
-#if DEBUG
+void FunctionAST::debugPrint([[ maybe_unused ]] int layer) const
+IFDEBUG({
     ++layer;
     if (!proto_->getName().empty()) { // top layer
         debug(layer, "Func: ", proto_->getName());
@@ -300,7 +288,96 @@ void FunctionAST::debugPrint(int layer) const
     if (!proto_->getName().empty()) {
         debug(layer, "End of Func");
     }
-#endif
+})
+
+// If/Else
+IfElseExpressionAST::IfElseExpressionAST(
+        std::unique_ptr<ExpressionAST> condExpr,
+        std::unique_ptr<ExpressionAST> thenExpr,
+        std::unique_ptr<ExpressionAST> elseExpr)
+    : condExpr_(std::move(condExpr)),
+      thenExpr_(std::move(thenExpr)),
+      elseExpr_(std::move(elseExpr))
+{ }
+
+llvm::Value *IfElseExpressionAST::codeGen() const
+{
+    llvm::Value *condValue = condExpr_->codeGen();
+    if (!condValue) {
+        return nullptr;
+    }
+
+    auto rhs = llvm::ConstantInt::get(
+            *Context::IRManager::getCtx(),
+            llvm::APInt(64, 0));
+
+    debug(0, "COND TYPE:", condValue->getType()->getTypeID());
+    debug(0, "COND VAL TYPE:", rhs->getType()->getTypeID());
+
+    Context::IRManager::getBuilder()->CreateICmpULT(condValue, rhs, "booltmp");
+    debug(0, "123123123123");
+
+    condValue = Context::IRManager::getBuilder()->CreateICmpNE(
+        condValue,
+        rhs,
+        "ifcond");
+
+    llvm::Function *func = Context::IRManager::getBuilder()->GetInsertBlock()->getParent();
+
+    llvm::BasicBlock *thenBB =
+        llvm::BasicBlock::Create(*Context::IRManager::getCtx(), "then", func);
+    llvm::BasicBlock *elseBB =
+        llvm::BasicBlock::Create(*Context::IRManager::getCtx(), "else");
+    llvm::BasicBlock *mergeBB =
+        llvm::BasicBlock::Create(*Context::IRManager::getCtx(), "ifcont");
+
+    Context::IRManager::getBuilder()->CreateCondBr(condValue, thenBB, elseBB);
+
+    Context::IRManager::getBuilder()->SetInsertPoint(thenBB);
+
+    llvm::Value *thenValue = thenExpr_->codeGen();
+    if (!thenValue) {
+        return nullptr;
+    }
+
+    Context::IRManager::getBuilder()->CreateBr(mergeBB);
+    thenBB = Context::IRManager::getBuilder()->GetInsertBlock();
+
+    func->insert(func->end(), elseBB);
+    Context::IRManager::getBuilder()->SetInsertPoint(elseBB);
+
+    llvm::Value *elseValue = elseExpr_->codeGen();
+    if (!elseValue) {
+        return nullptr;
+    }
+
+    Context::IRManager::getBuilder()->CreateBr(mergeBB);
+    elseBB = Context::IRManager::getBuilder()->GetInsertBlock();
+
+    func->insert(func->end(), mergeBB);
+    Context::IRManager::getBuilder()->SetInsertPoint(mergeBB);
+    llvm::PHINode *phiNode =
+        Context::IRManager::getBuilder()->CreatePHI(
+            llvm::Type::getInt64Ty(*Context::IRManager::getCtx()),
+            2,
+            "iftmp");
+
+    phiNode->addIncoming(thenValue, thenBB);
+    phiNode->addIncoming(elseValue, elseBB);
+    return phiNode;
 }
+
+void IfElseExpressionAST::debugPrint([[ maybe_unused ]] int layer) const
+IFDEBUG({
+    ++layer;
+    debug(layer, "If:");
+    condExpr_->debugPrint();
+    debug(layer, "Then:");
+    thenExpr_->debugPrint();
+    if (elseExpr_) {
+        debug(layer, "Else:");
+        elseExpr_->debugPrint();
+    }
+})
 
 } // namespace AST

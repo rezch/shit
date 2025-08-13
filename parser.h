@@ -65,6 +65,17 @@ public:
     //      @prototype)
     std::unique_ptr<AST::PrototypeAST> parseExtern();
 
+    // if/else
+    // seq(
+    //      'if',
+    //      ':',
+    //      @expression,
+    // optional(
+    //      'else',
+    //      ':',
+    //      @expression))
+    std::unique_ptr<AST::ExpressionAST> parseIfElse();
+
     // @expression
     std::unique_ptr<AST::FunctionAST> parseTopLevelExpr();
 

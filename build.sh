@@ -19,12 +19,15 @@ SRCS=(
     ./main.cpp
 )
 
+# SANITIZER="-fstandalone-debug -fsanitize=address"
+
 clang++ \
     -g -O3 \
     "${SRCS[@]}" \
     $LLVM_FLAGS \
     -Xlinker --export-dynamic \
-    -fstandalone-debug -fsanitize=address \
-    -o main
+    "$SANITIZER" \
+    -o main \
+    "$@"
 
 ./main

@@ -1,4 +1,5 @@
 #include "context.h"
+#include "debug.h"
 #include "parser.h"
 #include "jit.h"
 
@@ -87,6 +88,9 @@ std::unique_ptr<AST::ExpressionAST> Parser::parsePrimary()
     }
     if (token_.first == Token::INT) {
         return parseValue();
+    }
+    if (token_.first == Token::IF) {
+        return parseIfElse();
     }
     return AST::LogError("Unknown token when expecting an expression");
 }
@@ -191,6 +195,45 @@ std::unique_ptr<AST::PrototypeAST> Parser::parseExtern()
 {
     getToken(); // eject 'extern'
     return parsePrototype();
+}
+
+std::unique_ptr<AST::ExpressionAST> Parser::parseIfElse()
+{
+    getToken(); // eject 'if'
+
+    // condition
+    auto condExpr = parseExpression();
+    if (!condExpr) {
+        return nullptr;
+    }
+
+    if (getTokenName() != ":") {
+        return AST::LogError("Expected ':' after if statement\n");
+    }
+    getToken(); // eject ':'
+
+    auto thenExpr = parseExpression();
+    if (!thenExpr) {
+        return nullptr;
+    }
+
+    std::unique_ptr<AST::ExpressionAST> elseExpr = nullptr;
+    if (token_.first == Token::ELSE) {
+        getToken(); // eject 'else'
+        elseExpr = parseExpression();
+        if (!elseExpr) {
+            return nullptr;
+        }
+    }
+    else {
+        // TODO: add only if expressions
+        return AST::LogError("Expected 'else'\n");
+    }
+
+    return std::make_unique<AST::IfElseExpressionAST>(
+        std::move(condExpr),
+        std::move(thenExpr),
+        std::move(elseExpr));
 }
 
 std::unique_ptr<AST::FunctionAST> Parser::parseTopLevelExpr()

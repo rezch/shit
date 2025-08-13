@@ -14,20 +14,6 @@ bool isInt(const std::string& str)
             ) == str.end();
 }
 
-// bool isFloat(const std::string& str)
-// {
-//     bool countDot = false;
-//     return std::find_if(str.begin(), str.end(),
-//             [&countDot](char c) {
-//                 if (c != '.')
-//                     return !std::isdigit(c);
-//                 if (countDot)
-//                     return true;
-//                 countDot = true;
-//                 return false;
-//             }) == str.end();
-// }
-
 } // namespace
 
 int getTokenPrecedence(const std::string& token)
@@ -55,15 +41,10 @@ std::string tokenToString(TokenType token)
         case FUNC   :   return "TOKEN : FUNC";
         case EXT    :   return "TOKEN : EXT";
         case RET    :   return "TOKEN : RET";
-        // case BOOL   :   return "TOKEN : BOOL";
         case INT    :   return "TOKEN : INT";
-        // case FLOAT  :   return "TOKEN : FLOAT";
-        // case STR    :   return "TOKEN : STR";
         case IDENT  :   return "TOKEN : IDENT";
-        // case TBOOL  :   return "TOKEN : TBOOL";
-        // case TINT   :   return "TOKEN : TINT";
-        // case TFLOAT :   return "TOKEN : TFLOAT";
-        // case TSTR   :   return "TOKEN : TSTR";
+        case IF     :   return "TOKEN : IF";
+        case ELSE   :   return "TOKEN : ELSE";
     }
 }
 
@@ -93,18 +74,12 @@ TokenData Tokenizer::getTokenImpl()
     if (currentIdent == "ret") {
         return { TokenType::RET, nullptr };
     }
-    // if (currentIdent == "bool") {
-    //     return { TokenType::TBOOL, nullptr };
-    // }
-    // if (currentIdent == "int") {
-    //     return { TokenType::TINT, nullptr };
-    // }
-    // if (currentIdent == "float") {
-    //     return { TokenType::TFLOAT, nullptr };
-    // }
-    // if (currentIdent == "str") {
-    //     return { TokenType::TSTR, nullptr };
-    // }
+    if (currentIdent == "if") {
+        return { TokenType::IF, nullptr };
+    }
+    if (currentIdent == "else") {
+        return { TokenType::ELSE, nullptr };
+    }
     return parseValue(currentIdent);
 }
 
@@ -130,8 +105,7 @@ std::string Tokenizer::parseToken()
 
     if (lastSym == EOF) { return ""; }
 
-    if (std::isalnum(lastSym)
-            || lastSym == '-') { // for negative numbers
+    if (std::isalnum(lastSym)) { // for negative numbers
         return readWord();
     }
 

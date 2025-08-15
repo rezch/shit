@@ -141,10 +141,33 @@ private:
     std::unique_ptr<ExpressionAST> elseExpr_;
 };
 
+class ForExpressionAST : public ExpressionAST {
+public:
+    ForExpressionAST(
+        std::string varName,
+        std::unique_ptr<ExpressionAST> start,
+        std::unique_ptr<ExpressionAST> end,
+        std::unique_ptr<ExpressionAST> step,
+        std::unique_ptr<ExpressionAST> body_);
+
+    llvm::Value *codeGen() const override;
+
+    void debugPrint(int layer = 0) const override;
+
+private:
+    std::string iterName_;
+    std::unique_ptr<ExpressionAST> start_;
+    std::unique_ptr<ExpressionAST> end_;
+    std::unique_ptr<ExpressionAST> step_;
+    std::unique_ptr<ExpressionAST> body_;
+};
+
+
 // Loggers
 
 std::unique_ptr<ExpressionAST> LogError(const char *Str);
 llvm::Value *LogErrorV(const char *str);
 std::unique_ptr<PrototypeAST> LogErrorP(const char *str);
+std::unique_ptr<FunctionAST> LogErrorF(const char *str);
 
 } // namespace AST

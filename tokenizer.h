@@ -24,6 +24,9 @@ enum TokenType {
     // if/else
     IF      = -11,
     ELSE    = -12,
+
+    // for
+    FOR     = -13,
 };
 
 static const std::map<std::string, int> binopPrecedence = {

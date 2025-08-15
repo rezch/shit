@@ -68,13 +68,22 @@ public:
     // if/else
     // seq(
     //      'if',
+    //      @expression,
     //      ':',
     //      @expression,
     // optional(
     //      'else',
-    //      ':',
     //      @expression))
     std::unique_ptr<AST::ExpressionAST> parseIfElse();
+
+    // for
+    // seq(
+    //      'for', '(',
+    //      @identifier, '=', @expression, ';',
+    //      @expression,
+    //      optional(';', @expression),
+    //      ')')
+    std::unique_ptr<AST::ExpressionAST> parseFor();
 
     // @expression
     std::unique_ptr<AST::FunctionAST> parseTopLevelExpr();
@@ -102,9 +111,9 @@ private:
     }
 
     template <class T>
-    T getTokenData() const
+    T* getTokenData() const
     {
-        return *static_cast<T*>(token_.second);
+        return static_cast<T*>(token_.second);
     }
 
     std::string getTokenName() const
@@ -112,7 +121,7 @@ private:
         if (token_.first != Token::IDENT) {
             return {};
         }
-        return getTokenData<std::string>();
+        return *getTokenData<std::string>();
     }
 
     bool isAssigment(const std::unique_ptr<AST::ExpressionAST>& expr)

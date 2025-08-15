@@ -4,21 +4,27 @@
  "extern"
  "fun"
  "ret"
+ "if"
+ "else"
+ "for"
 ] @keyword
-
-; Types
-(primitive_type) @type
 
 ; Identifiers
 (identifier) @variable
-(bool) @boolean
 (number) @number
-(float_number) @number.float
-(string) @string
+(extern_definition module: (call) @module)
 
 ; Comments
 (comment) @comment
 
 ; Functions
-(function_definition name: (identifier) @function)
-(call name: (identifier) @function.call)
+(function_definition
+  name: (identifier) @function
+  parameters: (parameter_list) @punctuation.bracket)
+
+arg: (identifier) @variable.parameter
+arg_value: (identifier) @variable
+
+(call
+  name: (identifier) @function.call
+  args: (args_list) @punctuation.bracket)

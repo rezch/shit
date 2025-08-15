@@ -35,3 +35,10 @@ int64_t print(int64_t x) // NOLINT
     fprintf(stderr, "%ld\n", x);
     return 0;
 }
+
+int64_t in() // NOLINT
+{
+    int64_t value;
+    scanf("%ld", &value);
+    return value;
+}

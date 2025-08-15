@@ -21,7 +21,11 @@ Parser::Parser()
 
 std::unique_ptr<AST::ExpressionAST> Parser::parseValue()
 {
-    auto result = std::make_unique<AST::ValueAST>(getTokenData<int64_t>());
+    if (getTokenName() == "-") {
+        getToken(); // eject '-'
+        *getTokenData<int64_t>() *= -1;
+    }
+    auto result = std::make_unique<AST::ValueAST>(*getTokenData<int64_t>());
     getToken();
     return result;
 }
@@ -83,14 +87,17 @@ std::unique_ptr<AST::ExpressionAST> Parser::parsePrimary()
     if (getTokenName() == "(") {
         return parseParentheses();
     }
-    if (token_.first == Token::IDENT) {
-        return parseIdentifier();
-    }
-    if (token_.first == Token::INT) {
+    if (token_.first == Token::INT || getTokenName() == "-") {
         return parseValue();
     }
     if (token_.first == Token::IF) {
         return parseIfElse();
+    }
+    if (token_.first == Token::FOR) {
+        return parseFor();
+    }
+    if (token_.first == Token::IDENT) { // all getTokenName checks before this
+        return parseIdentifier();
     }
     return AST::LogError("Unknown token when expecting an expression");
 }
@@ -234,6 +241,66 @@ std::unique_ptr<AST::ExpressionAST> Parser::parseIfElse()
         std::move(condExpr),
         std::move(thenExpr),
         std::move(elseExpr));
+}
+
+std::unique_ptr<AST::ExpressionAST> Parser::parseFor()
+{
+    getToken(); // eject 'for'
+    if (getTokenName() != "(") {
+        return AST::LogError("Expected '(' after for.\n");
+    }
+    getToken(); // eject '('
+
+    std::string iterName = getTokenName();
+    if (iterName.empty()) {
+        return AST::LogError("Expected iterator name in for expression.\n");
+    }
+    getToken();
+
+    if (getTokenName() != "=") {
+        return AST::LogError("Expected '=' after iterator name.\n");
+    }
+    getToken(); // eject '='
+
+    auto startExpr = parseExpression();
+    if (!startExpr) {
+        return nullptr;
+    }
+    if (getTokenName() != ";") {
+        return AST::LogError("Expected ';' after start statement in for.\n");
+    }
+    getToken(); // eject ';'
+
+    auto endExpr = parseExpression();
+    if (!endExpr) {
+        return nullptr;
+    }
+
+    std::unique_ptr<AST::ExpressionAST> stepExpr;
+    if (getTokenName() == ";") {
+        getToken(); // eject ';'
+        stepExpr = parseExpression();
+        if (!stepExpr) {
+            return nullptr;
+        }
+    }
+
+    if (getTokenName() != ")") {
+        return AST::LogError("Expected ')' after for statement.\n");
+    }
+    getToken(); // eject ')'
+
+    auto body = parseExpression();
+    if (!body) {
+        return nullptr;
+    }
+
+    return std::make_unique<AST::ForExpressionAST>(
+            std::move(iterName),
+            std::move(startExpr),
+            std::move(endExpr),
+            std::move(stepExpr),
+            std::move(body));
 }
 
 std::unique_ptr<AST::FunctionAST> Parser::parseTopLevelExpr()

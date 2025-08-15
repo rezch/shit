@@ -40,6 +40,12 @@ std::unique_ptr<PrototypeAST> LogErrorP(const char *str)
     return nullptr;
 }
 
+std::unique_ptr<FunctionAST> LogErrorF(const char *str)
+{
+    LogError(str);
+    return nullptr;
+}
+
 // ---- AST values
 
 // Value
@@ -311,11 +317,7 @@ llvm::Value *IfElseExpressionAST::codeGen() const
             *Context::IRManager::getCtx(),
             llvm::APInt(64, 0));
 
-    debug(0, "COND TYPE:", condValue->getType()->getTypeID());
-    debug(0, "COND VAL TYPE:", rhs->getType()->getTypeID());
-
     Context::IRManager::getBuilder()->CreateICmpULT(condValue, rhs, "booltmp");
-    debug(0, "123123123123");
 
     condValue = Context::IRManager::getBuilder()->CreateICmpNE(
         condValue,
@@ -378,6 +380,109 @@ IFDEBUG({
         debug(layer, "Else:");
         elseExpr_->debugPrint();
     }
+})
+
+// for
+ForExpressionAST::ForExpressionAST(
+        std::string varName,
+        std::unique_ptr<ExpressionAST> start,
+        std::unique_ptr<ExpressionAST> end,
+        std::unique_ptr<ExpressionAST> step,
+        std::unique_ptr<ExpressionAST> body_)
+    : iterName_(std::move(varName)),
+      start_(std::move(start)),
+      end_(std::move(end)),
+      step_(std::move(step)),
+      body_(std::move(body_))
+{ }
+
+llvm::Value *ForExpressionAST::codeGen() const
+{
+    llvm::Value *startVal = start_->codeGen();
+    if (!startVal) {
+        return nullptr;
+    }
+
+    llvm::Function *func = Context::IRManager::getBuilder()->GetInsertBlock()->getParent();
+    llvm::BasicBlock *preHeaderBB = Context::IRManager::getBuilder()->GetInsertBlock();
+    llvm::BasicBlock *loopBB = llvm::BasicBlock::Create(
+        *Context::IRManager::getCtx(),
+        "loop",
+        func);
+
+    Context::IRManager::getBuilder()->CreateBr(loopBB);
+    Context::IRManager::getBuilder()->SetInsertPoint(loopBB);
+
+    llvm::PHINode *iter = Context::IRManager::getBuilder()->CreatePHI(
+        llvm::Type::getInt64Ty(*Context::IRManager::getCtx()),
+        2,
+        iterName_);
+
+    iter->addIncoming(startVal, preHeaderBB);
+
+    llvm::Value *oldIter = Context::IRManager::getValues()[iterName_];
+    Context::IRManager::getValues()[iterName_] = iter;
+
+    if (!body_->codeGen()) {
+        return nullptr;
+    }
+
+    llvm::Value *stepVal = nullptr;
+    if (step_) {
+        stepVal = step_->codeGen();
+    } else {
+        stepVal = llvm::ConstantInt::get(*Context::IRManager::getCtx(), llvm::APInt(64, 1.0));
+    }
+    if (!stepVal) {
+        return nullptr;
+    }
+
+    llvm::Value *nextIter = Context::IRManager::getBuilder()->CreateAdd(iter, stepVal, "nextvar");
+
+    llvm::Value *endCond = end_->codeGen();
+    if (!endCond) {
+        return nullptr;
+    }
+
+    endCond = Context::IRManager::getBuilder()->CreateICmpNE(
+            endCond,
+            llvm::ConstantInt::get(*Context::IRManager::getCtx(), llvm::APInt(64, 0.0)),
+            "loopcond");
+
+    llvm::BasicBlock *loopEndBB = Context::IRManager::getBuilder()->GetInsertBlock();
+    llvm::BasicBlock *afterBB =
+        llvm::BasicBlock::Create(
+            *Context::IRManager::getCtx(),
+            "afterloop",
+            func);
+
+    Context::IRManager::getBuilder()->CreateCondBr(endCond, loopBB, afterBB);
+    Context::IRManager::getBuilder()->SetInsertPoint(afterBB);
+    iter->addIncoming(nextIter, loopEndBB);
+
+    if (oldIter) {
+        Context::IRManager::getValues()[iterName_] = oldIter;
+    }
+    else {
+        Context::IRManager::getValues().erase(iterName_);
+    }
+
+    return llvm::Constant::getNullValue(llvm::Type::getDoubleTy(*Context::IRManager::getCtx()));
+}
+
+void ForExpressionAST::debugPrint([[ maybe_unused ]] int layer) const
+IFDEBUG({
+    ++layer;
+    debug(layer, "For ", iterName_, " = ");
+    start_->debugPrint();
+    debug(layer, "End:");
+    end_->debugPrint();
+    if (step_) {
+        debug(layer, "Step:");
+        step_->debugPrint();
+    }
+    debug(layer + 1, "Body:");
+    body_->debugPrint();
 })
 
 } // namespace AST

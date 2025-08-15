@@ -30,4 +30,6 @@ clang++ \
     -o main \
     "$@"
 
+notify-send --urgency=low "Build done"
+
 ./main

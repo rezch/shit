@@ -45,6 +45,7 @@ std::string tokenToString(TokenType token)
         case IDENT  :   return "TOKEN : IDENT";
         case IF     :   return "TOKEN : IF";
         case ELSE   :   return "TOKEN : ELSE";
+        case FOR    :   return "TOKEN : FOR";
     }
 }
 
@@ -80,6 +81,9 @@ TokenData Tokenizer::getTokenImpl()
     if (currentIdent == "else") {
         return { TokenType::ELSE, nullptr };
     }
+    if (currentIdent == "for") {
+        return { TokenType::FOR, nullptr };
+    }
     return parseValue(currentIdent);
 }
 
@@ -105,7 +109,7 @@ std::string Tokenizer::parseToken()
 
     if (lastSym == EOF) { return ""; }
 
-    if (std::isalnum(lastSym)) { // for negative numbers
+    if (std::isalnum(lastSym)) {
         return readWord();
     }
 
@@ -117,10 +121,10 @@ std::string Tokenizer::parseToken()
 std::string Tokenizer::readWord()
 {
     std::string currentIdent = {};
-    while (isalnum(lastSym) && lastSym != EOF && lastSym != ' ' && lastSym != ';' && lastSym != '\n') {
+    do {
         currentIdent += lastSym;
         lastSym = getchar();
-    }
+    } while (isalnum(lastSym) && lastSym != EOF && lastSym != ' ' && lastSym != ';' && lastSym != '\n');
     return currentIdent;
 }
 

@@ -1,16 +1,18 @@
 extern ipow(x, y);
+extern print(x);
 
+for (i = 10; i > 0; -1) print(x);
 
 fun fib(x)
-    if x < 3 :
+    if x < 3:
         1
     else
         fib(x - 1) + fib(x - 2)
 ;
 
-fun fib(x) if x < 3 : 1 else fib(x - 1) + fib(x - 2) ;
-
-
 # some comment
-foo(2, 5);
+fib(10); # another comment
+
+for (i = 0; i < 10)
+    print(ipow(2, i));
 

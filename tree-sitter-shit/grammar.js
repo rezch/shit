@@ -10,8 +10,6 @@
 module.exports = grammar({
   name: "shit",
 
-  // word: $ => $.identifier,
-
   rules: {
     source_file: $ => repeat($._definition),
 
@@ -20,40 +18,57 @@ module.exports = grammar({
       $.extern_definition,
       $.function_definition,
       $.call,
-      // $.var_definition,
       $.return_statement,
       $._expression,
+      $.ifelse,
+      $.for_loop,
+      $.eol,
+    ),
+
+    ifelse: $ => seq(
+      'if',
+      $._expression,
+      ':',
+      $._expression,
+      optional(
+        seq(
+          'else',
+          $._expression
+        )
+      )
+    ),
+
+    for_loop: $ => seq(
+      'for',
+      '(',
+      $.identifier, '=', $._expression, ';',
+      $._expression,
+      optional(
+        seq(
+          ';',
+          $._expression
+        ),
+      ),
+      ')'
     ),
 
     comment: $ => /#.*/,
 
     extern_definition: $ => seq(
       'extern',
-      field('module', $.identifier),
+      field('module', $.call),
     ),
 
     function_definition: $ => seq(
       'fun',
       field('name', $.identifier),
       field('parameters', $.parameter_list),
-      field('body', $.block),
-    ),
-
-    block: $ => seq(
-      '{',
-      repeat($._definition),
-      '}'
     ),
 
     call: $ => seq(
       field('name', $.identifier),
       field('args', $.args_list),
     ),
-
-    // var_definition: $ => seq(
-    //   $._type,
-    //   $.identifier,
-    // ),
 
     parameter_list: $ => seq(
       '(',
@@ -81,49 +96,40 @@ module.exports = grammar({
       ')'
     ),
 
-    // _type: $ => choice(
-    //   $.primitive_type,
-    // ),
-
-    // primitive_type: $ => choice(
-    //   'bool',
-    //   'int',
-    //   'float',
-    //   'str',
-    // ),
-
-    // _statement: $ => choice(
-    //   $.return_statement
-    // ),
-
     return_statement: $ => seq(
       'ret',
       $._expression,
     ),
 
     _expression: $ => choice(
-      // $.bool,
       $.identifier,
       $.number,
       prec(2, $.call),
-      // $.float_number,
-      // $.string,
       $.binary_expression,
     ),
 
     binary_expression: $ => choice(
-      prec.left(1, seq($._expression, '+', $._expression)),
-      prec.left(1, seq($._expression, '-', $._expression)),
-      prec.left(2, seq($._expression, '*', $._expression)),
-      prec.left(2, seq($._expression, '/', $._expression)),
+      prec.left(2, seq($._expression, '+', $._expression)),
+      prec.left(2, seq($._expression, '-', $._expression)),
+      prec.left(1, seq($._expression, '*', $._expression)),
+      prec.left(1, seq($._expression, '/', $._expression)),
 
       prec.left(0,
         seq(
           choice(
-            // $.var_definition,
             $.identifier,
           ),
           '=',
+          $._expression
+        )
+      ),
+
+      prec.left(1,
+        seq(
+          choice(
+            $.identifier,
+          ),
+          choice('>', '<'),
           $._expression
         )
       ),
@@ -139,10 +145,8 @@ module.exports = grammar({
     //   ),
     // ),
 
-    number: $ => /\d+/,
+    number: $ => /\d+|-\d+/,
 
-    // float_number: $ => /[+-]?((\d+\.?\d*)|(\.\d+))/,
-
-    // string: $ => /".*"/
+    eol: $ => ';',
   }
 });
